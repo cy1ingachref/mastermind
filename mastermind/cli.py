@@ -7,17 +7,34 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from . import __version__
-from .types import Task, Mission
+from .types import Task, Mission, TaskStatus, AgentConfig
 from .orchestrator import Orchestrator
 from .providers import list_providers, list_available_providers
 
 console = Console()
 
 
-def _run_mission(goal: str, mastermind: str, agents: list[str]) -> tuple[Mission, str]:
+def _run_mission(
+    goal: str,
+    mastermind: str,
+    agents: list[str],
+    use_memory: bool = False,
+    max_workers: int = 4,
+) -> tuple[Mission, str, float]:
     """Run a mission (shared between CLI commands)."""
+    # OneMind integration
+    one_mind = None
+    if use_memory:
+        try:
+            from onemind import OneMind
+            one_mind = OneMind()
+            console.print("[dim]OneMind memory enabled[/dim]")
+        except ImportError:
+            console.print("[yellow]OneMind not installed, running without memory[/yellow]")
+
     mission_id = __import__("hashlib").sha256(goal.encode()).hexdigest()[:8]
     mission = Mission(
         id=mission_id,
@@ -27,27 +44,28 @@ def _run_mission(goal: str, mastermind: str, agents: list[str]) -> tuple[Mission
         created_at=__import__("time").time(),
     )
 
-    orchestrator = Orchestrator(mastermind, agents)
+    orchestrator = Orchestrator(mastermind, agents, one_mind=one_mind)
 
     # Phase 1: Plan
-    console.print("\n[bold cyan]Phase 1: Planning[/bold cyan]")
+    console.print(f"\n[bold cyan]Phase 1: Planning[/bold cyan]")
     mission.tasks = orchestrator.plan(mission)
     mission.status = "executing"
     console.print(f"[dim]Decomposed into {len(mission.tasks)} tasks[/dim]")
 
-    # Phase 2: Execute
-    console.print("\n[bold cyan]Phase 2: Executing[/bold cyan]")
-    for task in mission.tasks:
-        if task.agent:
-            console.print(f"  [yellow]→[/yellow] {task.agent}: {task.description[:50]}...")
-        else:
-            console.print(f"  [blue]●[/blue] Mastermind: {task.description[:50]}...")
+    # Show plan table
+    table = Table(title="Mission Plan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Agent", style="cyan")
+    table.add_column("Task", style="green")
+    table.add_column("Depends On", style="yellow")
+    for i, task in enumerate(mission.tasks):
+        deps = ", ".join(task.depends_on) if task.depends_on else "-"
+        table.add_row(str(i + 1), task.agent, task.description[:50], deps)
+    console.print(table)
 
-        result = orchestrator.execute(task, mission)
-        if result.status == "done":
-            console.print(f"  [green]✓[/green] Done ({result.duration:.1f}s)")
-        else:
-            console.print(f"  [red]✗[/red] Failed: {result.error}")
+    # Phase 2: Execute
+    console.print(f"\n[bold cyan]Phase 2: Executing (parallel, {max_workers} workers)[/bold cyan]")
+    orchestrator.execute_parallel(mission, max_workers=max_workers)
 
     # Phase 3: Aggregate
     console.print("\n[bold cyan]Phase 3: Aggregating[/bold cyan]")
@@ -55,7 +73,11 @@ def _run_mission(goal: str, mastermind: str, agents: list[str]) -> tuple[Mission
     mission.status = "completed"
     mission.completed_at = __import__("time").time()
 
-    return mission, final
+    # Cost summary
+    cost_summary = orchestrator.get_cost_summary(mission)
+    mission.total_cost = cost_summary["total"]
+
+    return mission, final, mission.total_cost
 
 
 @click.group()
@@ -64,7 +86,7 @@ def cli():
     """MasterMind — multi-agent orchestration with mastermind.
 
     Pick a mastermind AI to decompose complex tasks,
-    delegate to other agents, and aggregate results.
+    delegate to other agents in parallel, and aggregate results.
     """
     pass
 
@@ -73,18 +95,27 @@ def cli():
 @click.argument("goal")
 @click.option("--mastermind", "-m", default="claude", help="Mastermind agent (claude, gpt, gemini, kimi, grok, mistral)")
 @click.option("--agents", "-a", default=None, help="Comma-separated worker agents")
+@click.option("--memory/--no-memory", default=False, help="Enable OneMind for cross-mission memory")
+@click.option("--workers", "-w", type=int, default=4, help="Max parallel workers (default: 4)")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed task output")
-def run(goal: str, mastermind: str, agents: str | None, verbose: bool):
+def run(goal: str, mastermind: str, agents: str | None, memory: bool, workers: int, verbose: bool):
     """Run a multi-agent mission.
 
     Example:
-        mastermind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi
+        mastermind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi -w 3
     """
     agent_list = [a.strip() for a in agents.split(",")] if agents else []
 
-    mission, result = _run_mission(goal, mastermind, agent_list)
+    mission, result, cost = _run_mission(goal, mastermind, agent_list, memory, workers)
 
     console.print(f"\n[bold green]Mission {mission.id} completed[/bold green]")
+    console.print(f"[dim]Duration: {mission.completed_at - mission.created_at:.1f}s[/dim]")
+    console.print(f"[dim]Cost: ${cost:.6f}[/dim]")
+
+    # Show progress summary
+    progress = mission.progress
+    console.print(f"\n[dim]Tasks: {progress.get('done', 0)} done, {progress.get('failed', 0)} failed[/dim]")
+
     console.print("\n[bold]Final Result:[/bold]")
     console.print(Panel(result, title="Synthesis", border_style="green"))
 
@@ -137,9 +168,11 @@ def plan(goal: str, mastermind: str, agents: str | None):
     table.add_column("#", style="dim", width=4)
     table.add_column("Agent", style="cyan")
     table.add_column("Task", style="green")
+    table.add_column("Depends On", style="yellow")
 
     for i, task in enumerate(tasks):
-        table.add_row(str(i + 1), task.agent, task.description[:60])
+        deps = ", ".join(task.depends_on) if task.depends_on else "-"
+        table.add_row(str(i + 1), task.agent, task.description[:60], deps)
 
     console.print(table)
 
@@ -152,9 +185,11 @@ def demo():
         "This demo shows how tasks are decomposed.\n"
         "No API keys required.\n\n"
         "In real usage, the mastermind AI would:\n"
-        "1. Decompose the goal into subtasks\n"
-        "2. Delegate each subtask to worker agents\n"
-        "3. Aggregate all results into a final deliverable",
+        "1. Decompose the goal into subtasks with dependencies\n"
+        "2. Run independent tasks in parallel\n"
+        "3. Store results in OneMind for memory across missions\n"
+        "4. Aggregate all results into a final deliverable\n"
+        "5. Track cost per agent and mission",
         title="Demo Mode",
         border_style="blue",
     ))
@@ -162,10 +197,10 @@ def demo():
     goal = "Build a REST API for a todo app with authentication and documentation"
 
     tasks = [
-        Task(id="task_0", description="Design API schema and endpoints", agent="mastermind"),
-        Task(id="task_1", description="Implement JWT authentication", agent="gpt"),
-        Task(id="task_2", description="Write API documentation", agent="gemini"),
-        Task(id="task_3", description="Write integration tests", agent="claude"),
+        Task(id="task_0", description="Design API schema and endpoints", agent="mastermind", depends_on=[]),
+        Task(id="task_1", description="Implement JWT authentication", agent="gpt", depends_on=["task_0"]),
+        Task(id="task_2", description="Write API documentation", agent="gemini", depends_on=["task_0"]),
+        Task(id="task_3", description="Write integration tests", agent="claude", depends_on=["task_1", "task_2"]),
     ]
 
     console.print(f"\n[bold]Goal:[/bold] {goal}\n")
@@ -174,9 +209,11 @@ def demo():
     table.add_column("#", style="dim", width=4)
     table.add_column("Agent", style="cyan")
     table.add_column("Task", style="green")
+    table.add_column("Depends On", style="yellow")
 
     for i, task in enumerate(tasks):
-        table.add_row(str(i + 1), task.agent, task.description)
+        deps = ", ".join(task.depends_on) if task.depends_on else "-"
+        table.add_row(str(i + 1), task.agent, task.description, deps)
 
     console.print(table)
     console.print("\n[dim]Run with real API keys to execute missions.[/dim]")
