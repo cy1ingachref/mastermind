@@ -1,4 +1,4 @@
-"""AgentMind types — data models for missions and tasks."""
+"""MasterMind types — data models for missions and tasks."""
 from __future__ import annotations
 
 import hashlib

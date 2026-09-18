@@ -1,4 +1,4 @@
-"""AgentMind CLI — multi-agent orchestration."""
+"""MasterMind CLI — multi-agent orchestration."""
 from __future__ import annotations
 
 import sys
@@ -59,9 +59,9 @@ def _run_mission(goal: str, mastermind: str, agents: list[str]) -> tuple[Mission
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="agentmind")
+@click.version_option(version=__version__, prog_name="mastermind")
 def cli():
-    """AgentMind — multi-agent orchestration with mastermind.
+    """MasterMind — multi-agent orchestration with mastermind.
 
     Pick a mastermind AI to decompose complex tasks,
     delegate to other agents, and aggregate results.
@@ -78,7 +78,7 @@ def run(goal: str, mastermind: str, agents: str | None, verbose: bool):
     """Run a multi-agent mission.
 
     Example:
-        agentmind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi
+        mastermind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi
     """
     agent_list = [a.strip() for a in agents.split(",")] if agents else []
 
@@ -148,7 +148,7 @@ def plan(goal: str, mastermind: str, agents: str | None):
 def demo():
     """Run a demo mission (no API keys needed)."""
     console.print(Panel(
-        "[bold]AgentMind Demo[/bold]\n\n"
+        "[bold]MasterMind Demo[/bold]\n\n"
         "This demo shows how tasks are decomposed.\n"
         "No API keys required.\n\n"
         "In real usage, the mastermind AI would:\n"

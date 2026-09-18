@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentmind"
+name = "mastermind"
 version = "0.1.0"
 description = "Multi-agent orchestration with mastermind. Pick a lead AI to decompose tasks, delegate to other agents, and aggregate results."
 readme = "README.md"
@@ -37,10 +37,10 @@ dev = [
 ]
 
 [project.scripts]
-agentmind = "agentmind.cli:cli"
+mastermind = "mastermind.cli:cli"
 
 [tool.setuptools.packages.find]
-include = ["agentmind*"]
+include = ["mastermind*"]
 exclude = ["tests*"]
 
 [tool.pytest.ini_options]

@@ -1,4 +1,4 @@
-"""Provider adapters for AgentMind.
+"""Provider adapters for MasterMind.
 
 Each provider wraps a different AI model behind a common interface.
 """

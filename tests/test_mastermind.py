@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 import os
 
-from agentmind import Task, Mission
-from agentmind.types import Task as Task2, Mission as Mission2
+from mastermind import Task, Mission
+from mastermind.types import Task as Task2, Mission as Mission2
 
 
 class TestTypes:
@@ -35,7 +35,7 @@ class TestOrchestrator:
 
     def test_plan_parses_json(self):
         """Test plan parsing with valid JSON."""
-        from agentmind.orchestrator import Orchestrator
+        from mastermind.orchestrator import Orchestrator
         from unittest.mock import MagicMock, patch
 
         # Mock providers
@@ -56,7 +56,7 @@ class TestOrchestrator:
 
     def test_plan_handles_invalid_json(self):
         """Test plan parsing falls back gracefully."""
-        from agentmind.orchestrator import Orchestrator
+        from mastermind.orchestrator import Orchestrator
         from unittest.mock import MagicMock
 
         mock_mastermind = MagicMock()
@@ -75,7 +75,7 @@ class TestOrchestrator:
 
     def test_execute_task_success(self):
         """Test task execution."""
-        from agentmind.orchestrator import Orchestrator
+        from mastermind.orchestrator import Orchestrator
         from unittest.mock import MagicMock
 
         mock_claude = MagicMock()
@@ -96,7 +96,7 @@ class TestOrchestrator:
 
     def test_aggregate_results(self):
         """Test aggregation of results."""
-        from agentmind.orchestrator import Orchestrator
+        from mastermind.orchestrator import Orchestrator
         from unittest.mock import MagicMock
 
         mock_claude = MagicMock()
@@ -119,14 +119,14 @@ class TestOrchestrator:
 
 class TestProviderDetection:
     def test_list_providers(self):
-        from agentmind.providers import list_providers
+        from mastermind.providers import list_providers
         providers = list_providers()
         assert "claude" in providers
         assert "gpt" in providers
         assert "gemini" in providers
 
     def test_list_available_with_no_keys(self):
-        from agentmind.providers import list_available_providers
+        from mastermind.providers import list_available_providers
         # Save current keys
         saved = {}
         for var in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",

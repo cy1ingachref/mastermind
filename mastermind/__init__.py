@@ -1,4 +1,4 @@
-"""AgentMind — multi-agent orchestration with mastermind."""
+"""MasterMind — multi-agent orchestration with mastermind."""
 from __future__ import annotations
 
 from .types import Task, Mission

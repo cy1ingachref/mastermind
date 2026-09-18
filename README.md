@@ -1,4 +1,4 @@
-# AgentMind
+# MasterMind
 
 **Multi-agent orchestration with mastermind.**
 
@@ -6,7 +6,7 @@ Pick a mastermind AI (Claude, GPT, Gemini, etc.) to decompose complex tasks,
 delegate to other agents, and aggregate results into a coherent deliverable.
 
 ```
-$ agentmind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi
+$ mastermind run "Build a REST API with auth and docs" -m claude -a gpt,gemini,kimi
 ```
 
 ---
@@ -35,20 +35,20 @@ Mastermind (your pick)          Worker Agents
 ## Quick Start
 
 ```bash
-pip install agentmind
+pip install mastermind
 
 # Set at least one API key
 export ANTHROPIC_API_KEY="..."
 export OPENAI_API_KEY="..."
 
 # Run a mission
-agentmind run "Write a full-stack todo app with tests" -m claude -a gpt,gemini
+mastermind run "Write a full-stack todo app with tests" -m claude -a gpt,gemini
 
 # Dry run (see the plan without executing)
-agentmind plan "Build an e-commerce site" -m gpt -a claude,gemini,kimi
+mastermind plan "Build an e-commerce site" -m gpt -a claude,gemini,kimi
 
 # See available providers
-agentmind providers
+mastermind providers
 ```
 
 ---
@@ -69,10 +69,10 @@ agentmind providers
 ## CLI Reference
 
 ```
-agentmind run <goal>      Execute a full mission
-agentmind plan <goal>     Dry run — show task decomposition
-agentmind providers       List available providers
-agentmind demo            Show example without API keys
+mastermind run <goal>      Execute a full mission
+mastermind plan <goal>     Dry run — show task decomposition
+mastermind providers       List available providers
+mastermind demo            Show example without API keys
 ```
 
 ### Options
@@ -83,11 +83,11 @@ agentmind demo            Show example without API keys
 
 ## OneMind Integration
 
-AgentMind works with [OneMind](https://github.com/cy1ingachref/one-mind) for
+MasterMind works with [OneMind](https://github.com/cy1ingachref/one-mind) for
 persistent shared memory across agent sessions.
 
 ```python
-from agentmind import Orchestrator
+from mastermind import Orchestrator
 from one_mind import remember, recall
 
 # Store mission results for future reference
@@ -102,7 +102,7 @@ context = recall("authentication")
 ## Architecture
 
 ```
-agentmind/
+mastermind/
 ├── __init__.py        # Main exports
 ├── types.py           # Task, Mission dataclasses
 ├── orchestrator.py    # Planning, delegation, aggregation
