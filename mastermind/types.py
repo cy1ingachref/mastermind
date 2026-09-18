@@ -31,8 +31,8 @@ class Task:
     completed_at: float = 0.0
     retry_count: int = 0
     max_retries: int = 3
-    depends_on: list[str] = field(default_factory=list)  # task IDs
-    cost: float = 0.0  # cost in USD
+    depends_on: list[str] = field(default_factory=list)
+    cost: float = 0.0
 
     @property
     def duration(self) -> float:
@@ -42,7 +42,6 @@ class Task:
 
     @property
     def is_ready(self) -> bool:
-        """Check if all dependencies are done."""
         return self.status == TaskStatus.PENDING
 
     def can_retry(self) -> bool:
@@ -53,7 +52,7 @@ class Task:
 class AgentConfig:
     """Configuration for an agent."""
     name: str
-    provider: str  # claude, gpt, gemini, etc.
+    provider: str
     model: str = ""
     system_prompt: str = ""
     max_tokens: int = 4096
@@ -68,7 +67,7 @@ class Mission:
     mastermind: str
     agents: list[str] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
-    status: str = "planning"  # planning, executing, completed, failed
+    status: str = "planning"
     created_at: float = 0.0
     completed_at: float = 0.0
     context: dict[str, Any] = field(default_factory=dict)
@@ -91,7 +90,6 @@ class Mission:
 
     @property
     def progress(self) -> dict[str, int]:
-        """Return status counts."""
         counts = {}
         for t in self.tasks:
             counts[t.status.value] = counts.get(t.status.value, 0) + 1

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mastermind"
-version = "0.5.0"
+version = "0.6.0"
 description = "Multi-agent orchestration with mastermind. Pick a lead AI to decompose tasks, delegate to other agents, and aggregate results."
 readme = "README.md"
 license = {text = "MIT"}

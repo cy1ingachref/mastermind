@@ -1,13 +1,13 @@
 """MasterMind CLI — multi-agent orchestration."""
 from __future__ import annotations
 
-import sys
+import json
+import os
 
 import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from . import __version__
 from .types import Task, Mission, TaskStatus, AgentConfig
@@ -23,6 +23,8 @@ def _run_mission(
     agents: list[str],
     use_memory: bool = False,
     max_workers: int = 4,
+    model_overrides: dict[str, str] | None = None,
+    export_path: str | None = None,
 ) -> tuple[Mission, str, float]:
     """Run a mission (shared between CLI commands)."""
     # OneMind integration
@@ -44,7 +46,7 @@ def _run_mission(
         created_at=__import__("time").time(),
     )
 
-    orchestrator = Orchestrator(mastermind, agents, one_mind=one_mind)
+    orchestrator = Orchestrator(mastermind, agents, one_mind=one_mind, model_overrides=model_overrides)
 
     # Phase 1: Plan
     console.print(f"\n[bold cyan]Phase 1: Planning[/bold cyan]")
@@ -77,6 +79,13 @@ def _run_mission(
     cost_summary = orchestrator.get_cost_summary(mission)
     mission.total_cost = cost_summary["total"]
 
+    # Export trace if requested
+    if export_path:
+        trace = orchestrator.export_trace(mission)
+        with open(export_path, "w") as f:
+            json.dump(trace, f, indent=2)
+        console.print(f"[dim]Trace exported to {export_path}[/dim]")
+
     return mission, final, mission.total_cost
 
 
@@ -97,8 +106,10 @@ def cli():
 @click.option("--agents", "-a", default=None, help="Comma-separated worker agents")
 @click.option("--memory/--no-memory", default=False, help="Enable OneMind for cross-mission memory")
 @click.option("--workers", "-w", type=int, default=4, help="Max parallel workers (default: 4)")
+@click.option("--model", "-M", multiple=True, help="Model override (format: agent:model, e.g., gpt:gpt-4o-mini)")
+@click.option("--export", "-e", default=None, help="Export mission trace to JSON file")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed task output")
-def run(goal: str, mastermind: str, agents: str | None, memory: bool, workers: int, verbose: bool):
+def run(goal: str, mastermind: str, agents: str | None, memory: bool, workers: int, model: tuple[str, ...], export: str | None, verbose: bool):
     """Run a multi-agent mission.
 
     Example:
@@ -106,7 +117,14 @@ def run(goal: str, mastermind: str, agents: str | None, memory: bool, workers: i
     """
     agent_list = [a.strip() for a in agents.split(",")] if agents else []
 
-    mission, result, cost = _run_mission(goal, mastermind, agent_list, memory, workers)
+    # Parse model overrides
+    model_overrides = {}
+    for m in model:
+        if ":" in m:
+            agent, model_name = m.split(":", 1)
+            model_overrides[agent.strip()] = model_name.strip()
+
+    mission, result, cost = _run_mission(goal, mastermind, agent_list, memory, workers, model_overrides, export)
 
     console.print(f"\n[bold green]Mission {mission.id} completed[/bold green]")
     console.print(f"[dim]Duration: {mission.completed_at - mission.created_at:.1f}s[/dim]")
@@ -145,11 +163,19 @@ def providers():
 @click.argument("goal")
 @click.option("--mastermind", "-m", default="claude", help="Mastermind agent")
 @click.option("--agents", "-a", default=None, help="Comma-separated worker agents")
-def plan(goal: str, mastermind: str, agents: str | None):
+@click.option("--model", "-M", multiple=True, help="Model override (format: agent:model)")
+def plan(goal: str, mastermind: str, agents: str | None, model: tuple[str, ...]):
     """Plan a mission without executing (dry run)."""
     agent_list = [a.strip() for a in agents.split(",")] if agents else []
 
-    orchestrator = Orchestrator(mastermind, agent_list)
+    # Parse model overrides
+    model_overrides = {}
+    for m in model:
+        if ":" in m:
+            agent, model_name = m.split(":", 1)
+            model_overrides[agent.strip()] = model_name.strip()
+
+    orchestrator = Orchestrator(mastermind, agent_list, model_overrides=model_overrides)
     mission_id = __import__("hashlib").sha256(goal.encode()).hexdigest()[:8]
     mission = Mission(
         id=mission_id,

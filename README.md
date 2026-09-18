@@ -109,7 +109,7 @@ mastermind demo            Show example without API keys
 
 ```python
 from mastermind import Orchestrator, Mission, Task, TaskStatus
-from one_mind import OneMind
+from onemind import OneMind
 
 # Create orchestrator with OneMind memory
 orchestrator = Orchestrator(

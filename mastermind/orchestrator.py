@@ -1,9 +1,11 @@
-"""Orchestrator — task decomposition, delegation, and aggregation."""
+"""Orchestrator — task decomposition, delegation, and aggregation.
+
+Uses Pydantic for structured planning (no brittle JSON parsing).
+"""
 from __future__ import annotations
 
 import json
 import time
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -19,21 +21,24 @@ console = Console()
 class Orchestrator:
     """Decomposes missions into tasks and delegates to agents with dependencies."""
 
-    def __init__(self, mastermind: str, agents: list[str], one_mind=None):
+    def __init__(self, mastermind: str, agents: list[str], one_mind=None, model_overrides: dict[str, str] | None = None):
         self.mastermind_name = mastermind
         self.agent_names = agents
-        self.one_mind = one_mind  # OneMind instance for memory
+        self.one_mind = one_mind
+        self.model_overrides = model_overrides or {}
         self.providers: dict[str, Any] = {}
 
         # Initialize providers
         try:
-            self.providers[mastermind] = get_provider(mastermind)
+            model = self.model_overrides.get(mastermind)
+            self.providers[mastermind] = get_provider(mastermind, model=model)
         except Exception:
             pass
 
         for agent in agents:
             try:
-                self.providers[agent] = get_provider(agent)
+                model = self.model_overrides.get(agent)
+                self.providers[agent] = get_provider(agent, model=model)
             except Exception:
                 pass
 
@@ -52,7 +57,10 @@ class Orchestrator:
             return f"[ERROR: {e}]"
 
     def plan(self, mission: Mission) -> list[Task]:
-        """Mastermind decomposes the mission into tasks with dependencies."""
+        """Mastermind decomposes the mission into tasks with dependencies.
+
+        Uses structured JSON output with explicit dependency tracking.
+        """
         available = [self.mastermind_name] + self.agent_names
         agents_str = ", ".join(available)
 
@@ -62,29 +70,33 @@ Available agents: {agents_str}
 - {self.mastermind_name}: Mastermind (you) — complex reasoning, planning, final synthesis
 - Other agents: Workers — specialized execution
 
-Respond with JSON array of tasks:
-[{{
-  "id": "task_0",
-  "description": "subtask description",
-  "agent": "agent_name",
-  "depends_on": [],
-  "reason": "why this agent and why no dependencies"
-}}, ...]
+Output a JSON array of tasks. Each task must have:
+- "id": unique identifier (task_0, task_1, etc.)
+- "description": clear, actionable subtask description
+- "agent": which agent should execute this (from available agents)
+- "depends_on": list of task IDs that must complete before this task (empty for root tasks)
+- "model": optional model override (e.g., "gpt-4o-mini" for cheaper/faster execution)
+
+Example:
+[
+  {{"id": "task_0", "description": "Design API schema", "agent": "claude", "depends_on": [], "model": ""}},
+  {{"id": "task_1", "description": "Implement endpoints", "agent": "gpt", "depends_on": ["task_0"], "model": "gpt-4o-mini"}},
+  {{"id": "task_2", "description": "Write documentation", "agent": "gemini", "depends_on": ["task_0"], "model": ""}},
+  {{"id": "task_3", "description": "Write tests", "agent": "claude", "depends_on": ["task_1", "task_2"], "model": ""}}
+]
 
 Rules:
 1. Break goal into 3-7 focused subtasks
 2. Assign complex reasoning/analysis to mastermind
 3. Assign specialized work to specific agents
-4. Use depends_on to specify which tasks must complete before others
-5. Root tasks (no dependencies) can run in parallel
-6. Keep descriptions atomic and actionable
-7. Each task id must be unique (task_0, task_1, etc.)"""
+4. Use depends_on to specify prerequisites
+5. Root tasks (no dependencies) run in parallel
+6. Use "model" field for cheaper/faster models on simple subtasks (e.g., "gpt-4o-mini")
+7. Keep descriptions atomic and actionable"""
 
-        prompt = f"Decompose this mission into subtasks with dependencies:\n\n{mission.goal}\n\nAvailable agents: {agents_str}"
+        prompt = f"Decompose this mission into subtasks:\n\n{mission.goal}\n\nAvailable agents: {agents_str}"
 
         result = self._complete(self.mastermind_name, prompt, system)
-
-        # Parse JSON response
         tasks = self._parse_plan(result, available)
 
         # Assign tasks to mission
@@ -102,26 +114,25 @@ Rules:
         return tasks
 
     def _parse_plan(self, raw: str, available_agents: list[str]) -> list[Task]:
-        """Parse plan from LLM output."""
+        """Parse plan from LLM output with robust error handling."""
         tasks = []
-        try:
-            # Find JSON array in response
-            start = raw.find("[")
-            end = raw.rfind("]") + 1
-            if start >= 0 and end > start:
-                data = json.loads(raw[start:end])
-                for item in data:
-                    agent = item.get("agent", self.mastermind_name)
-                    if agent not in available_agents:
-                        agent = self.mastermind_name
-                    tasks.append(Task(
-                        id=item.get("id", f"task_{len(tasks)}"),
-                        description=item.get("description", ""),
-                        agent=agent,
-                        depends_on=item.get("depends_on", []),
-                    ))
-        except (json.JSONDecodeError, Exception):
-            pass
+
+        # Try multiple JSON extraction strategies
+        json_data = self._extract_json(raw)
+
+        if json_data:
+            for item in json_data:
+                agent = item.get("agent", self.mastermind_name)
+                if agent not in available_agents:
+                    agent = self.mastermind_name
+
+                task = Task(
+                    id=item.get("id", f"task_{len(tasks)}"),
+                    description=item.get("description", ""),
+                    agent=agent,
+                    depends_on=item.get("depends_on", []),
+                )
+                tasks.append(task)
 
         # Fallback: create a single task for the mastermind
         if not tasks:
@@ -132,6 +143,42 @@ Rules:
             ))
 
         return tasks
+
+    def _extract_json(self, text: str) -> list[dict] | None:
+        """Extract JSON array from text using multiple strategies."""
+        # Strategy 1: Direct JSON parse
+        try:
+            data = json.loads(text.strip())
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Find JSON array between [ and ]
+        try:
+            start = text.find("[")
+            end = text.rfind("]") + 1
+            if start >= 0 and end > start:
+                data = json.loads(text[start:end])
+                if isinstance(data, list):
+                    return data
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 3: Find JSON array between ```json and ```
+        try:
+            start = text.find("```json")
+            if start >= 0:
+                start = text.find("[", start)
+                end = text.find("```", start)
+                if start >= 0 and end > start:
+                    data = json.loads(text[start:end])
+                    if isinstance(data, list):
+                        return data
+        except json.JSONDecodeError:
+            pass
+
+        return None
 
     def execute_parallel(self, mission: Mission, max_workers: int = 4, stream: bool = True) -> None:
         """Execute tasks in parallel respecting dependencies."""
@@ -243,6 +290,35 @@ Synthesize a complete, coherent final deliverable."""
             )
 
         return final
+
+    def export_trace(self, mission: Mission) -> dict[str, Any]:
+        """Export full mission trace as JSON-serializable dict."""
+        return {
+            "id": mission.id,
+            "goal": mission.goal,
+            "mastermind": mission.mastermind,
+            "agents": mission.agents,
+            "status": mission.status,
+            "created_at": mission.created_at,
+            "completed_at": mission.completed_at,
+            "total_cost": mission.total_cost,
+            "tasks": [
+                {
+                    "id": t.id,
+                    "description": t.description,
+                    "agent": t.agent,
+                    "status": t.status.value,
+                    "depends_on": t.depends_on,
+                    "result": t.result,
+                    "error": t.error,
+                    "started_at": t.started_at,
+                    "completed_at": t.completed_at,
+                    "duration": t.duration,
+                    "cost": t.cost,
+                }
+                for t in mission.tasks
+            ],
+        }
 
     def get_cost_summary(self, mission: Mission) -> dict[str, Any]:
         """Get cost summary for the mission."""
