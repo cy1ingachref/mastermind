@@ -69,6 +69,7 @@ mastermind providers
 - **Provider Failover** — Automatically retries on different providers
 - **Cost Tracking** — Track cost per agent and per mission
 - **OneMind Integration** — Store mission plans and results for cross-mission memory
+- **Tool Calling** — Agents can use tools: file I/O, code execution, web search/fetch, shell commands
 - **Streaming Progress** — See task execution in real time
 - **Task Status Machine** — Clear lifecycle: pending → running → done/failed → retry
 

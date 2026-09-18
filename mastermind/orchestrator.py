@@ -14,6 +14,7 @@ from rich.table import Table
 
 from .providers import get_provider, retry_with_backoff
 from .types import Task, Mission, TaskStatus, AgentConfig
+from .tools import get_registry, AgentLoop
 
 console = Console()
 
@@ -240,10 +241,27 @@ Your role: Execute the assigned task thoroughly and report results clearly."""
         prompt = f"Task: {task.description}\n{context_str}\n\nProvide a complete, actionable result."
 
         try:
-            result = self._complete(provider_name, prompt, system)
-            task.result = result
-            task.status = TaskStatus.DONE if not result.startswith("[ERROR") else TaskStatus.FAILED
-            task.completed_at = time.time()
+            # Check if agent has tools available
+            registry = get_registry()
+            if registry.list_tools():
+                # Use agent loop with tools
+                loop = AgentLoop(
+                    provider=self.providers.get(provider_name),
+                    registry=registry,
+                    system_prompt=system,
+                    max_steps=10,
+                )
+                result, trace = loop.run(task.description + "\n\n" + context_str)
+                task.result = result
+                task.status = TaskStatus.DONE if not result.startswith("[ERROR") else TaskStatus.FAILED
+                task.completed_at = time.time()
+            else:
+                # Use simple completion (no tools)
+                result = self._complete(provider_name, prompt, system)
+                task.result = result
+                task.status = TaskStatus.DONE if not result.startswith("[ERROR") else TaskStatus.FAILED
+                task.completed_at = time.time()
+
             task.retry_count += 1
 
             # Store result in OneMind
